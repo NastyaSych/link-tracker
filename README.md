@@ -1,6 +1,6 @@
 ## Запуск:
 
-1. Создать .env файл с {TELEGRAM_TOKEN}, {TELEGRAM_BOT_NAME}, {GITHUB_API_TOKEN}, {STACKOVERFLOW_API_KEY}
+1. Создать .env файл с переменными {TELEGRAM_TOKEN}, {TELEGRAM_BOT_NAME}, {GITHUB_API_TOKEN}, {STACKOVERFLOW_API_KEY}
 
 2.
 ```bash
@@ -14,33 +14,49 @@ docker-compose up
 
 ## Архитектура
 
-Scrapper Service
-
-↓
-
-Kafka topic: link.raw-updates
-
-↓
-
-AI Agent Service
-
-↓
-
-Kafka topic: link.processed-updates
-
-↓
-
-Bot Service
-
-↓
-
-Telegram API
+![Rартинка](images/Architecture.png)
 
 Три независимых сервиса:
 
 - bot: Telegram бот для взаимодействия с пользователем
 - scrapper: сервис для отслеживания ссылок и хранения данных
-- ai agent: получает и обрабатывает сообщения об обновлении (фильтрация по стоп-словам и авторам)
+- ai agent: сервис для обработки сообщений
+
+## Описание сервисов
+
+### Bot Service
+
+Отвечает за взаимодействие с пользователями через Telegram Bot API:
+
+- Регистрация и авторизация пользователей
+- Обработка команд (/track, /untrack, /list и др.)
+- Управление подписками через взаимодействие со Scrapper Service 
+- Отправка уведомлений пользователям 
+- Хранение данных о пользователях и их настройках
+
+### Scrapper Service
+
+Осуществляет мониторинг контента:
+
+- Периодическая проверка отслеживаемых URL на наличие изменений 
+- Парсинг контента с различных источников (GitHub, Stack Overflow, Reddit и др.)
+- Определение изменений (diff detection)
+- Отправка уведомлений в Bot Service при обнаружении обновлений 
+- Хранение информации о подписках и состоянии контента
+
+Методы коммуникации:
+
+REST API для синхронной коммуникации
+
+Apache Kafka для асинхронной обработки
+
+### AI Agent Service
+
+Обрабатывает контент перед отправкой уведомлений:
+
+- Фильтрация по стоп-словам и авторам
+
+Работает как промежуточное звено между Scrapper и Bot
 
 ## Детали
 - В application.conf можно выбрать механизм отправки сообщений (kafka/http) и database access-type (sql/orm)
