@@ -1,0 +1,215 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: link_tracker
+      POSTGRES_USER: sychenator
+      POSTGRES_PASSWORD: CurseYou-PerryThePlatypus
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app_network
+
+  kafka0:
+    image: apache/kafka:4.2.0
+    hostname: kafka0
+    container_name: kafka0
+    environment:
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_NODE_ID: 1
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka0:9093,2@kafka1:9093,3@kafka2:9093'
+
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka0:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_NUM_PARTITIONS: 3
+      CLUSTER_ID: "abcdefghijklmnopqrstuv"  # любая валидная base64‑строка длиной 22
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka_data_0:/var/lib/kafka/data
+    networks:
+      - app_network
+
+  kafka1:
+    image: apache/kafka:4.2.0
+    hostname: kafka1
+    container_name: kafka1
+    environment:
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_NODE_ID: 2
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka0:9093,2@kafka1:9093,3@kafka2:9093'
+
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka1:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_NUM_PARTITIONS: 3
+      CLUSTER_ID: "abcdefghijklmnopqrstuv"
+    volumes:
+      - kafka_data_1:/var/lib/kafka/data
+    networks:
+      - app_network
+
+  kafka2:
+    image: apache/kafka:4.2.0
+    hostname: kafka2
+    container_name: kafka2
+    environment:
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_NODE_ID: 3
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka0:9093,2@kafka1:9093,3@kafka2:9093'
+
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka2:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_NUM_PARTITIONS: 3
+      CLUSTER_ID: "abcdefghijklmnopqrstuv"
+    volumes:
+      - kafka_data_2:/var/lib/kafka/data
+    networks:
+      - app_network
+
+  kafka-init-topics:
+    image: apache/kafka:4.2.0
+    container_name: kafka-init-topics
+    depends_on:
+      - kafka0
+    command:
+      - bash
+      - -c
+      - |
+        echo "Waiting for Kafka to be ready..."
+        for i in {1..30}; do
+          /opt/kafka/bin/kafka-topics.sh \
+            --bootstrap-server kafka0:9092 \
+            --list >/dev/null 2>&1 && break
+          echo "Kafka not ready yet, sleeping..."
+          sleep 2
+        done
+        echo "Creating topics..."
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka0:9092 \
+          --create --if-not-exists \
+          --topic link.raw-updates \
+          --partitions 2 \
+          --replication-factor 3
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka0:9092 \
+          --create --if-not-exists \
+          --topic link.processed-updates \
+          --partitions 2 \
+          --replication-factor 3
+        echo "Topics created. Exiting."
+    restart: "no"
+    networks:
+      - app_network
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    container_name: kafka-ui
+    depends_on:
+      - kafka0
+      - kafka1
+      - kafka2
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka0:9092,kafka1:9092,kafka2:9092
+    ports:
+      - "8084:8080"
+    networks:
+      - app_network
+
+  valkey:
+    image:
+      valkey/valkey:latest
+    volumes:
+      - valkey_data:/bitnami/valkey/data
+    ports:
+      - "6379:6379"
+    networks:
+      - app_network
+
+  redisinsight:
+    image: redis/redisinsight:latest
+    depends_on:
+      - valkey
+    ports:
+      - "8085:5540"
+    environment:
+      RI_REDIS_HOST: valkey
+    networks:
+      - app_network
+  
+  bot:
+    image: link-tracker-bot:0.1.0-SNAPSHOT
+    ports:
+      - "8081:8081"
+    environment:
+      TELEGRAM_TOKEN: ${TELEGRAM_TOKEN}
+      TELEGRAM_BOT_NAME: ${TELEGRAM_BOT_NAME}
+      BOT_PORT: 8081
+      SCRAPPER_PORT: 8080
+      TZ: Europe/Moscow
+    networks:
+      - app_network
+
+  scrapper:
+    image: link-tracker-scrapper:0.1.0-SNAPSHOT
+    ports:
+      - "8080:8080"
+    environment:
+      TZ: Europe/Moscow
+      GITHUB_API_TOKEN: ${GITHUB_API_TOKEN}
+      STACKOVERFLOW_API_KEY: ${STACKOVERFLOW_API_KEY}
+    networks:
+      - app_network
+
+  ai:
+    image: link-tracker-ai:0.1.0-SNAPSHOT
+    ports:
+      - "8082:8082"
+    environment:
+      TZ: Europe/Moscow
+    networks:
+      - app_network
+
+volumes:
+  postgres_data:
+  kafka_data_0:
+  kafka_data_1:
+  kafka_data_2:
+  valkey_data:
+
+networks:
+  app_network:
+    driver: bridge

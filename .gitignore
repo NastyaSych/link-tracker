@@ -1,0 +1,7 @@
+.env
+.bsp
+.idea
+.metals
+target
+*.class
+.vscode
